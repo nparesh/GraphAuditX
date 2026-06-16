@@ -1,59 +1,92 @@
 ﻿function GraphAuditX {
-<#
-.SYNOPSIS
-Creates a Microsoft Purview audit query using Microsoft Graph
-
-.VERSION
-1.2
-
-.SOURCE
-https://github.com/nparesh/GraphAuditX-PowerShell-Module
-#>
 
     param(
-        [Parameter(Mandatory)]
         [datetime]$StartDate,
-
-        [Parameter(Mandatory)]
         [datetime]$EndDate,
-
-        [string]$Operations,
-        [string]$UserIds,
-        [string]$RecordType
+        [string[]]$Operations,
+        [string]$RecordType,
+        [string]$Keyword
     )
 
-    # ===== CONNECTION VALIDATION =====
-    try {
-        $token = Get-GraphAuditXToken
-        if (-not $token) { throw "No token" }
-    }
-    catch {
-        throw "❌ Not connected. Run Connect-GraphAuditX first."
+    Write-Host "🚀 Submitting audit query..."
+
+    # Format dates
+    $start = $StartDate.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    $end   = $EndDate.ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+    # Build request body
+    $body = @{
+        displayName = "GraphAuditX Query $(Get-Date -Format HHmmss)"
+        filterStartDateTime = $start
+        filterEndDateTime   = $end
     }
 
-    # ===== REQUEST =====
+    if ($Keyword) {
+        $body.keywordFilter = $Keyword
+    }
+
+    if ($Operations) {
+        $body.operationFilters = $Operations
+    }
+
+    if ($RecordType) {
+        $body.recordTypeFilters = @($RecordType)
+    }
+
     $uri = "https://graph.microsoft.com/beta/security/auditLog/queries"
 
-    $body = @{
-        displayName = "GraphAuditX $(Get-Date -Format s)"
-        filterStartDateTime = $StartDate.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        filterEndDateTime   = $EndDate.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    # Submit query
+    $response = Invoke-GraphAuditXRequest -Method POST -Uri $uri -Body $body
+    $queryId = $response.id
+
+    if (-not $queryId) {
+        throw "Failed to create audit query"
     }
 
-    if ($Operations) { $body.operationFilters = @($Operations) }
-    if ($UserIds)    { $body.userPrincipalNameFilters = @($UserIds) }
-    if ($RecordType) { $body.recordTypeFilters = @($RecordType) }
+    Write-Host "⏳ Query submitted. ID: $queryId"
 
-    $json = $body | ConvertTo-Json -Depth 5
+    # Polling config
+    $maxAttempts = 120
+    $attempt = 0
+    $status = $null
 
-    $response = Invoke-GraphAuditXRequest -Method POST -Uri $uri -Body $json
+    do {
+        Start-Sleep -Seconds 5
+        $attempt++
 
-    if ($response -and $response.id) {
-        Write-Host "✅ Query created" -ForegroundColor Green
-        Write-Host "Query ID: $($response.id)" -ForegroundColor Cyan
-        return $response.id
+        $statusResponse = Invoke-GraphAuditXRequest `
+            -Method GET `
+            -Uri "$uri/$queryId"
+
+        $status = $statusResponse.status
+        Write-Host "Status: $status"
+
+        if ($status -eq "failed") {
+            throw "Audit query failed on server"
+        }
+
+        if ($attempt -ge $maxAttempts) {
+            throw "Query timeout after $($attempt * 5) seconds"
+        }
+
+    } while ($status -ne "succeeded")
+
+    Write-Host "✅ Query completed"
+
+    # Get final results
+    $final = Invoke-GraphAuditXRequest `
+        -Method GET `
+        -Uri "$uri/$queryId"
+
+    # Return only records (important for UI)
+    if ($final.results) {
+        return $final.results
+    }
+    elseif ($final.value) {
+        return $final.value
     }
     else {
-        throw "❌ Failed to create audit query"
+        Write-Host "⚠️ No results returned"
+        return @()
     }
 }

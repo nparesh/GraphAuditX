@@ -1,40 +1,51 @@
 ﻿function Invoke-GraphAuditXRequest {
 
     param(
-        [Parameter(Mandatory)]
-        [ValidateSet("GET","POST")]
-        [string]$Method,
-
-        [Parameter(Mandatory)]
-        [string]$Uri,
-
-        [object]$Body
+        [Parameter(Mandatory)][string]$Method,
+        [Parameter(Mandatory)][string]$Uri,
+        [object]$Body,
+        [hashtable]$Headers
     )
 
-    $token = Get-GraphAuditXToken
-
-    $headers = @{
-        Authorization = "Bearer $token"
+    # 🔥 HARD STOP IF URI BAD
+    if ([string]::IsNullOrWhiteSpace($Uri)) {
+        throw "Invoke-GraphAuditXRequest BLOCKED: Uri is EMPTY"
     }
 
+    # 🔥 TOKEN
+    $token = Get-GraphAuditXToken
+    if (-not $token) {
+        throw "Failed to acquire Graph token"
+    }
+
+    # 🔥 HEADERS
+    if (-not $Headers) { $Headers = @{} }
+    $Headers["Authorization"] = "Bearer $token"
+
+    Write-Host "Calling Graph API:" $Uri
+
     try {
-        if ($Body) {
-            return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers -Body $Body -ContentType "application/json"
+        # ✅ ALWAYS send body if provided (even if empty object)
+        if ($PSBoundParameters.ContainsKey('Body') -and $Body -ne $null) {
+
+            $json = $Body | ConvertTo-Json -Depth 10
+
+            return Invoke-RestMethod `
+                -Method $Method `
+                -Uri $Uri `
+                -Headers $Headers `
+                -Body $json `
+                -ContentType "application/json"
         }
         else {
-            return Invoke-RestMethod -Method $Method -Uri $Uri -Headers $headers
+            return Invoke-RestMethod `
+                -Method $Method `
+                -Uri $Uri `
+                -Headers $Headers
         }
     }
     catch {
-        Write-Host "❌ Graph API error" -ForegroundColor Red
-
-        if ($_.ErrorDetails.Message) {
-            Write-Host $_.ErrorDetails.Message
-        }
-        else {
-            $_
-        }
-
-        return $null
+        Write-Host "FAILED URI:" $Uri
+        throw "Graph API call failed: $($_.Exception.Message)"
     }
 }

@@ -1,30 +1,27 @@
 ﻿function Connect-GraphAuditX {
+
+    [CmdletBinding()]
     param(
-        [Parameter(Mandatory)]
-        [string]$TenantId,
-
-        [Parameter(Mandatory)]
-        [string]$ClientId,
-
-        [Parameter(Mandatory)]
-        [securestring]$ClientSecret
+        [Parameter(Mandatory)][string]$TenantId,
+        [Parameter(Mandatory)][string]$ClientId,
+        [Parameter(Mandatory)][securestring]$ClientSecret
     )
 
-    # Convert secure string safely (in-memory only)
-    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($ClientSecret)
-    $plainSecret = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
+    Write-Host "🔐 Connecting to Microsoft Graph..." -ForegroundColor Cyan
 
-    # Store config in script scope
+    $plainSecret = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ClientSecret)
+    )
+
+    $token = Get-GraphAuditXToken `
+        -TenantId $TenantId `
+        -ClientId $ClientId `
+        -ClientSecret $plainSecret
+
     $script:GraphAuditXAuth = @{
-        TenantId     = $TenantId
-        ClientId     = $ClientId
-        ClientSecret = $plainSecret
-        Token        = $null
-        Expiry       = Get-Date
+        Token  = $token
+        Expiry = (Get-Date).AddHours(1)
     }
 
-    # Get initial token
-    Get-GraphAuditXToken | Out-Null
-
-    Write-Host "✅ Connected to Microsoft Graph" -ForegroundColor Green
+    Write-Host "✅ Connected successfully" -ForegroundColor Green
 }

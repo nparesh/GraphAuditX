@@ -11,7 +11,7 @@
 
     PowerShellVersion = '5.1'
 
-    FunctionsToExport = @('*')
+    FunctionsToExport = @('GraphAuditX')
     CmdletsToExport   = @()
     VariablesToExport = '*'
 

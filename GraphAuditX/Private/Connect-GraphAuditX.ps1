@@ -1,37 +1,18 @@
 ﻿function Connect-GraphAuditX {
-<#
-.SYNOPSIS
-Secure login for GraphAuditX (client credentials)
 
-.VERSION 1.2
-#>
-
-    param(
-        [Parameter(Mandatory)]
-        [string]$TenantId,
-
-        [Parameter(Mandatory)]
-        [string]$ClientId,
-
-        [Parameter(Mandatory)]
-        [securestring]$ClientSecret
-    )
-
-    # Convert secure string safely (in-memory only)
-    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($ClientSecret)
-    $plainSecret = [Runtime.InteropServices.Marshal]::PtrToStringAuto($ptr)
-
-    # Store config in script scope
-    $script:GraphAuditXAuth = @{
-        TenantId     = $TenantId
-        ClientId     = $ClientId
-        ClientSecret = $plainSecret
-        Token        = $null
-        Expiry       = Get-Date
+    # If already connected, reuse session
+    if (Get-MgContext) {
+        return
     }
 
-    # Get initial token
-    Get-GraphAuditXToken | Out-Null
+    Write-Host "Opening browser for login..." -ForegroundColor Cyan
 
-    Write-Host "✅ Connected (secure)" -ForegroundColor Green
+    # Delegated auth (browser + MFA)
+    Connect-MgGraph -Scopes "AuditLog.Read.All","Directory.Read.All"
+
+    $ctx = Get-MgContext
+
+    if (-not $ctx) {
+        throw "Authentication failed"
+    }
 }
